@@ -27,7 +27,9 @@ python convert.py \
 Right now, this is just a test to show tha the outputs from mlx and huggingface don't change all that much.
 
 ```sh
-python model.py
+python model.py \
+  --bert-model bert-base-uncased \
+  --mlx-model weights/bert-base-uncased.npz
 ```
 
 Which will show the following outputs:
@@ -39,7 +41,17 @@ MLX BERT:
    -0.51360303]
   [ 0.9460105   0.1358298  -0.2945672  ...  0.00868467 -0.90271163
    -0.2785422 ]]]
+```
 
+They can be compared against the 🤗 implementation with:
+
+```sh
+python hf_model.py \
+  --bert-model bert-base-uncased
+```
+
+Which will show:
+```
  HF BERT:
 [[[-0.17057131  0.08602707 -0.12471108 ... -0.09469365 -0.00275959
     0.28314728]
