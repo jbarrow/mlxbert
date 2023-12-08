@@ -168,14 +168,14 @@ class Bert(nn.Module):
         input_ids: mx.array,
         token_type_ids: mx.array,
         attention_mask: mx.array | None = None,
-    ) -> mx.array:
+    ) -> tuple[mx.array, mx.array]:
         x = self.embeddings(input_ids, token_type_ids)
         y = self.encoder(x, attention_mask)
-        return y
-        # return mx.tanh(self.pooler(y[:, 0]))
+        return y, mx.tanh(self.pooler(y[:, 0]))
 
 
 if __name__ == "__main__":
+    string = "This is an example of BERT working on MLX."
     model = Bert(ModelArgs())
 
     weights = mx.load("weights/bert-base-uncased.npz")
@@ -186,16 +186,25 @@ if __name__ == "__main__":
 
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
 
-    tokens = tokenizer("test", return_tensors="np")
+    tokens = tokenizer(string, return_tensors="np")
     tokens = {key: mx.array(v) for key, v in tokens.items()}
 
-    mlx_output = numpy.array(model(**tokens))
+    mlx_output, mlx_pooled = model(**tokens)
+    mlx_output = numpy.array(mlx_output)
+    mlx_pooled = numpy.array(mlx_pooled)
 
     torch_model = AutoModel.from_pretrained("bert-base-uncased")
-    torch_tokens = tokenizer("test", return_tensors="pt")
-    torch_output = torch_model(**torch_tokens).last_hidden_state.detach().numpy()
+    torch_tokens = tokenizer(string, return_tensors="pt")
+    torch_forward = torch_model(**torch_tokens)
+    torch_output = torch_forward.last_hidden_state.detach().numpy()
+    torch_pooled = torch_forward.pooler_output.detach().numpy()
 
     print("MLX BERT:")
     print(mlx_output)
     print("\n HF BERT:")
     print(torch_output)
+
+    print("\n\nMLX Pooled:")
+    print(mlx_pooled[0, :20])
+    print("\n HF Pooled:")
+    print(torch_pooled[0, :20])
