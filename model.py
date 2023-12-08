@@ -194,5 +194,7 @@ if __name__ == "__main__":
     torch_tokens = tokenizer("test", return_tensors="pt")    
     torch_output = torch_model(**torch_tokens).last_hidden_state.detach().numpy()
 
+    print("MLX BERT:")
     print(mlx_output)
+    print("\n HF BERT:")
     print(torch_output)
