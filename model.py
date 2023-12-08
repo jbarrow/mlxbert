@@ -83,15 +83,6 @@ class MultiHeadAttention(Module):
 
         return self.out_proj(values_hat)
 
-    @staticmethod
-    def create_additive_causal_mask(N: int, dtype: mx.Dtype = mx.float32):
-        indices = mx.arange(N)
-        mask = indices[:, None] < indices[None]
-        # usually inf but 1e9 is as good and softmax(full(1e9)) != nan
-        # TODO: Should replace this with finfo(dtype).min
-        mask = mask.astype(dtype) * -1e9
-        return mask
-
 
 class TransformerEncoderLayer(Module):
     """
@@ -187,14 +178,39 @@ def replace_key(key: str) -> str:
     key = key.replace(".self.key.", ".key_proj.")
     key = key.replace(".self.query.", ".query_proj.")
     key = key.replace(".self.value.", ".value_proj.")
+    key = key.replace(".attention.output.dense.", ".attention.out_proj.")
     key = key.replace(".attention.output.LayerNorm.", ".ln1.")
     key = key.replace(".output.LayerNorm.", ".ln2.")
     key = key.replace(".intermediate.dense.", ".linear1.")
     key = key.replace(".output.dense.", ".linear2.")
-    key = key.replace(".attention.linear2.", ".attention.out_proj.")
     key = key.replace(".LayerNorm.", ".norm.")
     key = key.replace("pooler.dense.", "pooler.")
     return key
+
+
+def test_correctly_loaded(torch_tensors: dict[str, numpy.array], m: BertModel) -> None:
+    for i in range(12):
+        keys = {
+            f"encoder.layer.{i}.attention.self.query.weight": f"encoder.layers.{i}.attention.query_proj.weight",
+            f"encoder.layer.{i}.attention.self.query.bias": f"encoder.layers.{i}.attention.query_proj.bias",
+            f"encoder.layer.{i}.attention.self.key.weight": f"encoder.layers.{i}.attention.key_proj.weight",
+            f"encoder.layer.{i}.attention.self.key.bias": f"encoder.layers.{i}.attention.key_proj.bias",
+            f"encoder.layer.{i}.attention.self.value.weight": f"encoder.layers.{i}.attention.value_proj.weight",
+            f"encoder.layer.{i}.attention.self.value.bias": f"encoder.layers.{i}.attention.value_proj.bias",
+            f"encoder.layer.{i}.attention.output.dense.weight": f"encoder.layers.{i}.attention.out_proj.weight",
+            f"encoder.layer.{i}.attention.output.dense.bias": f"encoder.layers.{i}.attention.out_proj.bias",
+            f"encoder.layer.{i}.attention.output.LayerNorm.weight": f"encoder.layers.{i}.ln1.weight",
+            f"encoder.layer.{i}.attention.output.LayerNorm.bias": f"encoder.layers.{i}.ln1.bias",
+            f"encoder.layer.{i}.intermediate.dense.weight": f"encoder.layers.{i}.linear1.weight",
+            f"encoder.layer.{i}.intermediate.dense.bias": f"encoder.layers.{i}.linear1.bias",
+            f"encoder.layer.{i}.output.dense.weight": f"encoder.layers.{i}.linear2.weight",
+            f"encoder.layer.{i}.output.dense.bias": f"encoder.layers.{i}.linear2.bias",
+            f"encoder.layer.{i}.output.LayerNorm.weight": f"encoder.layers.{i}.ln2.weight",
+            f"encoder.layer.{i}.output.LayerNorm.bias": f"encoder.layers.{i}.ln2.bias",
+        }
+
+        for orig, new in keys.items():
+            assert numpy.allclose(torch_tensors[new], m.state_dict()[orig].numpy())
 
 
 if __name__ == "__main__":
@@ -211,17 +227,6 @@ if __name__ == "__main__":
     torch_tensors = {
         replace_key(key): tensor.numpy() for key, tensor in m.state_dict().items()
     }
-
-    from pprint import pprint
-
-    pprint(
-        [
-            (k, t.shape)
-            for k, t in m.state_dict().items()
-            if k.startswith("encoder.layer.0")
-        ]
-    )
-    pprint([(k, v) for k, v in mlx_tensors.items() if k.startswith("encoder.layers.0")])
 
     # weights = mx.load("bert-base-uncased.npz")
     weights = tree_unflatten(list(torch_tensors.items()))
