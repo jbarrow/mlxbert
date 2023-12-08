@@ -30,23 +30,29 @@ class TransformerEncoderLayer(Module):
     A transformer encoder layer with (the original BERT) post-normalization.
     """
 
-    def __init__(self, dims: int, num_heads: int, mlp_dims: Optional[int] = None):
+    def __init__(
+        self,
+        dims: int,
+        num_heads: int,
+        mlp_dims: Optional[int] = None,
+        layer_norm_eps: float = 1e-12,
+    ):
         super().__init__()
         mlp_dims = mlp_dims or dims * 4
         self.attention = nn.MultiHeadAttention(dims, num_heads)
-        self.ln1 = LayerNorm(dims)
-        self.ln2 = LayerNorm(dims)
+        self.ln1 = LayerNorm(dims, eps=layer_norm_eps)
+        self.ln2 = LayerNorm(dims, eps=layer_norm_eps)
         self.linear1 = Linear(dims, mlp_dims)
         self.linear2 = Linear(mlp_dims, dims)
 
     def __call__(self, x, mask):
-        y = self.attention(x, x, x, mask)
-        y = self.ln1(x) + y
+        attention_out = self.attention(x, x, x, mask)
+        add_and_norm = self.ln1(x + attention_out)
 
-        y = self.linear1(y)
-        y = mx.maximum(y, 0)
-        y = self.linear2(y)
-        x = self.ln2(x) + y
+        ff = self.linear1(add_and_norm)
+        ff_relu = mx.maximum(ff, 0)
+        ff_out = self.linear2(ff_relu)
+        x = self.ln2(ff_out + add_and_norm)
 
         return x
 
@@ -62,7 +68,7 @@ class TransformerEncoder(Module):
         ]
 
     def __call__(self, x, mask):
-        for l in self.layers:
+        for l in self.layers[:1]:
             x = l(x, mask)
 
         return x
@@ -75,7 +81,7 @@ class BertEmbeddings(nn.Module):
         self.position_embeddings = nn.Embedding(
             config.max_position_embeddings, config.intermediate_size
         )
-        self.norm = nn.LayerNorm(config.intermediate_size)
+        self.norm = nn.LayerNorm(config.intermediate_size, eps=config.layer_norm_eps)
 
     def __call__(self, input_ids: mx.array, token_type_ids: mx.array) -> mx.array:
         words = self.word_embeddings(input_ids)
@@ -83,7 +89,6 @@ class BertEmbeddings(nn.Module):
         token_types = self.token_type_embeddings(token_type_ids)
 
         embeddings = position + words + token_types
-        print(self.norm(embeddings))
         return self.norm(embeddings)
 
 
@@ -105,7 +110,8 @@ class Bert(nn.Module):
     ) -> mx.array:
         x = self.embeddings(input_ids, token_type_ids)
         y = self.encoder(x, attention_mask)
-        return mx.tanh(self.pooler(y[:, 0]))
+        return y
+        # return mx.tanh(self.pooler(y[:, 0]))
 
 
 def replace_key(key: str) -> str:
@@ -131,11 +137,11 @@ if __name__ == "__main__":
     )
 
     m = BertModel.from_pretrained("bert-base-uncased")
+    m.eval()
     t = AutoTokenizer.from_pretrained("bert-base-uncased")
 
     torch_tensors = {
-        replace_key(key): tensor.numpy()
-        for key, tensor in m.state_dict().items()
+        replace_key(key): tensor.numpy() for key, tensor in m.state_dict().items()
     }
 
     # weights = mx.load("bert-base-uncased.npz")
@@ -147,8 +153,30 @@ if __name__ == "__main__":
     tokens = t("test", return_tensors="np")
     tokens = {key: mx.array(v) for key, v in tokens.items()}
 
-    numpy.array(model(**tokens))
+    embeddings = numpy.array(model(**tokens))
 
     torch_tokens = t("test", return_tensors="pt")
-    print(m.embeddings(**{k: v for k, v in torch_tokens.items() if k != "attention_mask"}))
-    #print(m(**torch_tokens).pooler_output.detach().numpy())
+    torch_embeddings = m.embeddings(
+        **{k: v for k, v in torch_tokens.items() if k != "attention_mask"}
+    )
+
+    first_attn_torch = (
+        m.encoder.layer[0](torch_embeddings, torch_tokens["attention_mask"])[0]
+        .detach()
+        .numpy()
+    )
+
+    first_attn_mlx = numpy.array(model(**tokens))
+
+    print(first_attn_mlx[0][0][:10])
+    print(first_attn_torch[0][0][:10])
+
+
+    #torch_output = m(**torch_tokens).last_hidden_state.detach().numpy()
+
+    # print(embeddings[0, :10])
+    # print(torch_embeddings)
+    # print(torch_output[0, :10])
+    # print(numpy.allclose(embeddings, torch_embeddings))
+    # print(numpy.abs(embeddings - torch_embeddings).sum())
+    # print(m(**torch_tokens).pooler_output.detach().numpy())
