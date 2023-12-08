@@ -103,14 +103,15 @@ class TransformerEncoderLayer(Module):
         self.ln2 = LayerNorm(dims, eps=layer_norm_eps)
         self.linear1 = Linear(dims, mlp_dims)
         self.linear2 = Linear(mlp_dims, dims)
+        self.gelu = nn.GELU()
 
     def __call__(self, x, mask):
         attention_out = self.attention(x, x, x, mask)
         add_and_norm = self.ln1(x + attention_out)
 
         ff = self.linear1(add_and_norm)
-        ff_relu = mx.maximum(ff, 0)
-        ff_out = self.linear2(ff_relu)
+        ff_gelu = self.gelu(ff)
+        ff_out = self.linear2(ff_gelu)
         x = self.ln2(ff_out + add_and_norm)
 
         return x
@@ -127,7 +128,7 @@ class TransformerEncoder(Module):
         ]
 
     def __call__(self, x, mask):
-        for l in self.layers[:1]:
+        for l in self.layers:
             x = l(x, mask)
 
         return x
@@ -252,8 +253,10 @@ if __name__ == "__main__":
 
     first_attn_mlx = numpy.array(model(**tokens))
 
-    print(first_attn_mlx[0][0][:10])
-    print(first_attn_torch[0][0][:10])
+    #print(first_attn_mlx[0][0][:10])
+    #print(first_attn_torch[0][0][:10])
+
+    print(embeddings, m(**torch_tokens).last_hidden_state.detach().numpy())
 
     # torch_output = m(**torch_tokens).last_hidden_state.detach().numpy()
 
