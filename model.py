@@ -76,11 +76,21 @@ class MultiHeadAttention(Module):
         scale = math.sqrt(1 / queries.shape[-1])
         scores = (queries * scale) @ keys
         if mask is not None:
+            mask = self.converrt_mask_to_additive_causal_mask(mask)
+            mask = mx.expand_dims(mask, (1, 2))
+            mask = mx.broadcast_to(mask, scores.shape)
             scores = scores + mask.astype(scores.dtype)
         scores = mx.softmax(scores, axis=-1)
         values_hat = (scores @ values).transpose(0, 2, 1, 3).reshape(B, L, -1)
 
         return self.out_proj(values_hat)
+
+    def converrt_mask_to_additive_causal_mask(
+        self, mask: mx.array, dtype: mx.Dtype = mx.float32
+    ) -> mx.array:
+        mask = mask == 0
+        mask = mask.astype(dtype) * -1e9
+        return mask
 
 
 class TransformerEncoderLayer(Module):
@@ -175,7 +185,11 @@ class Bert(nn.Module):
 
 
 if __name__ == "__main__":
-    string = "This is an example of BERT working on MLX."
+    string = [
+        "This is an example of BERT working on MLX.",
+        "A second string",
+        "This is another string.",
+    ]
     model = Bert(ModelArgs())
 
     weights = mx.load("weights/bert-base-uncased.npz")
@@ -186,7 +200,8 @@ if __name__ == "__main__":
 
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
 
-    tokens = tokenizer(string, return_tensors="np")
+    tokens = tokenizer(string, return_tensors="np", padding=True)
+    print(tokens)
     tokens = {key: mx.array(v) for key, v in tokens.items()}
 
     mlx_output, mlx_pooled = model(**tokens)
@@ -194,7 +209,7 @@ if __name__ == "__main__":
     mlx_pooled = numpy.array(mlx_pooled)
 
     torch_model = AutoModel.from_pretrained("bert-base-uncased")
-    torch_tokens = tokenizer(string, return_tensors="pt")
+    torch_tokens = tokenizer(string, return_tensors="pt", padding=True)
     torch_forward = torch_model(**torch_tokens)
     torch_output = torch_forward.last_hidden_state.detach().numpy()
     torch_pooled = torch_forward.pooler_output.detach().numpy()
