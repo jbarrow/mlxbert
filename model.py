@@ -144,7 +144,9 @@ class BertEmbeddings(nn.Module):
 
     def __call__(self, input_ids: mx.array, token_type_ids: mx.array) -> mx.array:
         words = self.word_embeddings(input_ids)
-        position = self.position_embeddings(mx.array([[0, 1, 2]]))
+        position = self.position_embeddings(
+            mx.broadcast_to(mx.arange(input_ids.shape[1]), input_ids.shape)
+        )
         token_types = self.token_type_embeddings(token_type_ids)
 
         embeddings = position + words + token_types
@@ -173,7 +175,6 @@ class Bert(nn.Module):
         # return mx.tanh(self.pooler(y[:, 0]))
 
 
-
 if __name__ == "__main__":
     model = Bert(ModelArgs())
 
@@ -191,7 +192,7 @@ if __name__ == "__main__":
     mlx_output = numpy.array(model(**tokens))
 
     torch_model = AutoModel.from_pretrained("bert-base-uncased")
-    torch_tokens = tokenizer("test", return_tensors="pt")    
+    torch_tokens = tokenizer("test", return_tensors="pt")
     torch_output = torch_model(**torch_tokens).last_hidden_state.detach().numpy()
 
     print("MLX BERT:")
