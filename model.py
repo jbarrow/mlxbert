@@ -1,6 +1,6 @@
 from typing import Optional
 from dataclasses import dataclass
-from mlx.utils import tree_flatten, tree_unflatten, tree_map
+from mlx.utils import tree_unflatten, tree_map
 from mlx.nn.layers.base import Module
 from mlx.nn.layers.linear import Linear
 from mlx.nn.layers.normalization import LayerNorm
@@ -9,8 +9,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import math
 
-from transformers import BertModel, AutoTokenizer
-import torch
+from transformers import AutoModel, AutoTokenizer
 import numpy
 
 
@@ -174,95 +173,26 @@ class Bert(nn.Module):
         # return mx.tanh(self.pooler(y[:, 0]))
 
 
-def replace_key(key: str) -> str:
-    key = key.replace(".layer.", ".layers.")
-    key = key.replace(".self.key.", ".key_proj.")
-    key = key.replace(".self.query.", ".query_proj.")
-    key = key.replace(".self.value.", ".value_proj.")
-    key = key.replace(".attention.output.dense.", ".attention.out_proj.")
-    key = key.replace(".attention.output.LayerNorm.", ".ln1.")
-    key = key.replace(".output.LayerNorm.", ".ln2.")
-    key = key.replace(".intermediate.dense.", ".linear1.")
-    key = key.replace(".output.dense.", ".linear2.")
-    key = key.replace(".LayerNorm.", ".norm.")
-    key = key.replace("pooler.dense.", "pooler.")
-    return key
-
-
-def test_correctly_loaded(torch_tensors: dict[str, numpy.array], m: BertModel) -> None:
-    for i in range(12):
-        keys = {
-            f"encoder.layer.{i}.attention.self.query.weight": f"encoder.layers.{i}.attention.query_proj.weight",
-            f"encoder.layer.{i}.attention.self.query.bias": f"encoder.layers.{i}.attention.query_proj.bias",
-            f"encoder.layer.{i}.attention.self.key.weight": f"encoder.layers.{i}.attention.key_proj.weight",
-            f"encoder.layer.{i}.attention.self.key.bias": f"encoder.layers.{i}.attention.key_proj.bias",
-            f"encoder.layer.{i}.attention.self.value.weight": f"encoder.layers.{i}.attention.value_proj.weight",
-            f"encoder.layer.{i}.attention.self.value.bias": f"encoder.layers.{i}.attention.value_proj.bias",
-            f"encoder.layer.{i}.attention.output.dense.weight": f"encoder.layers.{i}.attention.out_proj.weight",
-            f"encoder.layer.{i}.attention.output.dense.bias": f"encoder.layers.{i}.attention.out_proj.bias",
-            f"encoder.layer.{i}.attention.output.LayerNorm.weight": f"encoder.layers.{i}.ln1.weight",
-            f"encoder.layer.{i}.attention.output.LayerNorm.bias": f"encoder.layers.{i}.ln1.bias",
-            f"encoder.layer.{i}.intermediate.dense.weight": f"encoder.layers.{i}.linear1.weight",
-            f"encoder.layer.{i}.intermediate.dense.bias": f"encoder.layers.{i}.linear1.bias",
-            f"encoder.layer.{i}.output.dense.weight": f"encoder.layers.{i}.linear2.weight",
-            f"encoder.layer.{i}.output.dense.bias": f"encoder.layers.{i}.linear2.bias",
-            f"encoder.layer.{i}.output.LayerNorm.weight": f"encoder.layers.{i}.ln2.weight",
-            f"encoder.layer.{i}.output.LayerNorm.bias": f"encoder.layers.{i}.ln2.bias",
-        }
-
-        for orig, new in keys.items():
-            assert numpy.allclose(torch_tensors[new], m.state_dict()[orig].numpy())
-
 
 if __name__ == "__main__":
     model = Bert(ModelArgs())
 
-    mlx_tensors = dict(
-        [(key, array.shape) for key, array in tree_flatten(model.parameters())]
-    )
-
-    m = BertModel.from_pretrained("bert-base-uncased")
-    m.eval()
-    t = AutoTokenizer.from_pretrained("bert-base-uncased")
-
-    torch_tensors = {
-        replace_key(key): tensor.numpy() for key, tensor in m.state_dict().items()
-    }
-
-    # weights = mx.load("bert-base-uncased.npz")
-    weights = tree_unflatten(list(torch_tensors.items()))
+    weights = mx.load("weights/bert-base-uncased.npz")
+    weights = tree_unflatten(list(weights.items()))
     weights = tree_map(lambda p: mx.array(p), weights)
 
     model.update(weights)
 
-    tokens = t("test", return_tensors="np")
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+
+    tokens = tokenizer("test", return_tensors="np")
     tokens = {key: mx.array(v) for key, v in tokens.items()}
 
-    embeddings = numpy.array(model(**tokens))
+    mlx_output = numpy.array(model(**tokens))
 
-    torch_tokens = t("test", return_tensors="pt")
-    torch_embeddings = m.embeddings(
-        **{k: v for k, v in torch_tokens.items() if k != "attention_mask"}
-    )
+    torch_model = AutoModel.from_pretrained("bert-base-uncased")
+    torch_tokens = tokenizer("test", return_tensors="pt")    
+    torch_output = torch_model(**torch_tokens).last_hidden_state.detach().numpy()
 
-    first_attn_torch = (
-        m.encoder.layer[0](torch_embeddings, torch_tokens["attention_mask"])[0]
-        .detach()
-        .numpy()
-    )
-
-    first_attn_mlx = numpy.array(model(**tokens))
-
-    #print(first_attn_mlx[0][0][:10])
-    #print(first_attn_torch[0][0][:10])
-
-    print(embeddings, m(**torch_tokens).last_hidden_state.detach().numpy())
-
-    # torch_output = m(**torch_tokens).last_hidden_state.detach().numpy()
-
-    # print(embeddings[0, :10])
-    # print(torch_embeddings)
-    # print(torch_output[0, :10])
-    # print(numpy.allclose(embeddings, torch_embeddings))
-    # print(numpy.abs(embeddings - torch_embeddings).sum())
-    # print(m(**torch_tokens).pooler_output.detach().numpy())
+    print(mlx_output)
+    print(torch_output)
