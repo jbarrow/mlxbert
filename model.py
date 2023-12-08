@@ -8,6 +8,7 @@ from transformers import AutoTokenizer
 
 import mlx.core as mx
 import mlx.nn as nn
+import argparse
 import numpy
 import math
 
@@ -27,8 +28,12 @@ class ModelArgs:
 model_configs = {
     "bert-base-uncased": ModelArgs(),
     "bert-base-cased": ModelArgs(),
-    "bert-large-uncased": ModelArgs(),
-    "bert-large-cased": ModelArgs(),
+    "bert-large-uncased": ModelArgs(
+        intermediate_size=1024, num_attention_heads=16, num_hidden_layers=24
+    ),
+    "bert-large-cased": ModelArgs(
+        intermediate_size=1024, num_attention_heads=16, num_hidden_layers=24
+    ),
 }
 
 
@@ -191,22 +196,22 @@ class Bert(nn.Module):
         return y, mx.tanh(self.pooler(y[:, 0]))
 
 
-if __name__ == "__main__":
+def run(bert_model: str, mlx_model: str):
     batch = [
         "This is an example of BERT working on MLX.",
         "A second string",
         "This is another string.",
     ]
-    
-    model = Bert(ModelArgs())
 
-    weights = mx.load("weights/bert-base-uncased.npz")
+    model = Bert(model_configs[bert_model])
+
+    weights = mx.load(mlx_model)
     weights = tree_unflatten(list(weights.items()))
     weights = tree_map(lambda p: mx.array(p), weights)
 
     model.update(weights)
 
-    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    tokenizer = AutoTokenizer.from_pretrained(bert_model)
 
     tokens = tokenizer(batch, return_tensors="np", padding=True)
     tokens = {key: mx.array(v) for key, v in tokens.items()}
@@ -220,3 +225,22 @@ if __name__ == "__main__":
 
     print("\n\nMLX Pooled:")
     print(mlx_pooled[0, :20])
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Convert BERT weights to MLX.")
+    parser.add_argument(
+        "--bert-model",
+        type=str,
+        default="bert-base-uncased",
+        help="The huggingface name of the BERT model to save.",
+    )
+    parser.add_argument(
+        "--mlx-model",
+        type=str,
+        default="weights/bert-base-uncased.npz",
+        help="The output path for the MLX BERT weights.",
+    )
+    args = parser.parse_args()
+
+    run(args.bert_model, args.mlx_model)

@@ -52,5 +52,5 @@ MLX BERT:
 ## To do's
 
 - [x] fix position encodings
-- [ ] bert large and cased variants loaded
+- [x] bert large and cased variants loaded
 - [x] example usage
