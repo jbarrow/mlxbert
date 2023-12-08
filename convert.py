@@ -2,8 +2,6 @@ from transformers import BertModel
 
 import argparse
 import numpy
-import json
-import os
 
 
 def replace_key(key: str) -> str:
@@ -28,10 +26,6 @@ def convert(bert_model: str, mlx_model: str) -> None:
         replace_key(key): tensor.numpy() for key, tensor in model.state_dict().items()
     }
     numpy.savez(mlx_model, **tensors)
-    # save the config
-    config_path = os.path.join(os.path.dirname(mlx_model), "config.json")
-    with open(config_path, "w") as fp:
-        json.dump(model.config._get_config_dict(bert_model), fp)
     # save the tokenizer
 
 

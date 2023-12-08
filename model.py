@@ -4,13 +4,12 @@ from mlx.utils import tree_unflatten, tree_map
 from mlx.nn.layers.base import Module
 from mlx.nn.layers.linear import Linear
 from mlx.nn.layers.normalization import LayerNorm
+from transformers import AutoTokenizer
 
 import mlx.core as mx
 import mlx.nn as nn
-import math
-
-from transformers import AutoModel, AutoTokenizer
 import numpy
+import math
 
 
 @dataclass
@@ -23,6 +22,14 @@ class ModelArgs:
     hidden_dropout_prob: float = 0.1
     layer_norm_eps: float = 1e-12
     max_position_embeddings: int = 512
+
+
+model_configs = {
+    "bert-base-uncased": ModelArgs(),
+    "bert-base-cased": ModelArgs(),
+    "bert-large-uncased": ModelArgs(),
+    "bert-large-cased": ModelArgs(),
+}
 
 
 class MultiHeadAttention(Module):
@@ -185,11 +192,12 @@ class Bert(nn.Module):
 
 
 if __name__ == "__main__":
-    string = [
+    batch = [
         "This is an example of BERT working on MLX.",
         "A second string",
         "This is another string.",
     ]
+    
     model = Bert(ModelArgs())
 
     weights = mx.load("weights/bert-base-uncased.npz")
@@ -200,26 +208,15 @@ if __name__ == "__main__":
 
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
 
-    tokens = tokenizer(string, return_tensors="np", padding=True)
-    print(tokens)
+    tokens = tokenizer(batch, return_tensors="np", padding=True)
     tokens = {key: mx.array(v) for key, v in tokens.items()}
 
     mlx_output, mlx_pooled = model(**tokens)
     mlx_output = numpy.array(mlx_output)
     mlx_pooled = numpy.array(mlx_pooled)
 
-    torch_model = AutoModel.from_pretrained("bert-base-uncased")
-    torch_tokens = tokenizer(string, return_tensors="pt", padding=True)
-    torch_forward = torch_model(**torch_tokens)
-    torch_output = torch_forward.last_hidden_state.detach().numpy()
-    torch_pooled = torch_forward.pooler_output.detach().numpy()
-
     print("MLX BERT:")
     print(mlx_output)
-    print("\n HF BERT:")
-    print(torch_output)
 
     print("\n\nMLX Pooled:")
     print(mlx_pooled[0, :20])
-    print("\n HF Pooled:")
-    print(torch_pooled[0, :20])
