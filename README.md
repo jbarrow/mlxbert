@@ -1,5 +1,7 @@
 # mlxbert
 
+## Update: this model is being merged into https://github.com/ml-explore/mlx-examples, all future work will take place there.
+
 A BERT implementation in Apple's new MLX framework.
 
 ## Dependency Installation
